@@ -1,3 +1,4 @@
+import hashlib
 import socket
 import os
 import json
@@ -108,3 +109,115 @@ class FtpClient(object):
                 current_percent = int((received_size / total) * 100)
             new_size = yield
             received_size += new_size
+
+    def _cd(self, *args, **kwargs):
+        if len(args[0]) > 1:
+            path = args[0][1]
+        else:
+            path = ''
+        data = {"action": "change_dir", "path": path}
+        self.sock.send(json.dumps(data).encode())
+        response = self.get_response()
+        if response.get("status_code") == 260:
+            self.terminal_display = "%s:" % response.get('data').get('current_path')
+
+    def _pwd(self, *args, **kwargs):
+        data = {"action": "pwd"}
+        self.sock.send(json.dumps(data).encode())
+        response = self.get_response()
+        has_err = False
+        if response.get('status_code') == 200:
+            data = response.get('data')
+            if data:
+                print(data)
+            else:
+                has_err = True
+        else:
+            has_err = True
+
+        if has_err:
+            print("Error: something wrong")
+
+    def _ls(self, *args, **kwargs):
+        data = {'action': 'listdir'}
+        self.sock.send(json.dumps(data).encode())
+        response = self.get_response()
+        has_err = False
+        if response.get('status_code') == 200:
+            data = response.get('data')
+            if data:
+                print(data[1])
+            else:
+                has_err = True
+        else:
+            has_err = True
+
+        if has_err:
+            print("Error: something wrong")
+
+    def _get(self, cmd_list):
+        if len(cmd_list) == 1:
+            print("no filename follows...")
+            return
+        data_header = {
+            'action': 'get',
+            'filename': cmd_list[1]
+        }
+        if self.__md5_required(cmd_list):
+            data_header['md5'] = True
+
+        self.sock.send(json.dumps(data_header).encode())
+        response = self.get_response()
+        print(response)
+        if response.get('status_code') == 257:
+            self.sock.send(b'1')
+            base_filename = cmd_list[1].split('/')[-1]
+            received_size = 0
+            file_obj = open(base_filename, 'wb')
+            file_total_size = response.get('data').get('file_size')
+            if file_total_size == 0:
+                file_obj.close()
+                return
+
+            if self.__md5_required(cmd_list):
+                md5_obj = hashlib.md5()
+                progress = self.show_progress(file_total_size)
+                progress.__next__()
+
+                while received_size < file_total_size:
+                    data = self.sock.recv(1024)
+                    received_size += len(data)
+                    try:
+                        progress.send(len(data))
+                    except StopIteration as e:
+                        print("100%")
+                    file_obj.write(data)
+                    md5_obj.update(data)
+                else:
+                    print("----->file recv done-----")
+                    file_obj.close()
+                    md5_val = md5_obj.hexdigest()
+                    md5_from_server = self.get_response()
+                    if md5_from_server['status_code'] == 258:
+                        if md5_from_server['md5'] == md5_val:
+                            print("%s 文件一致性校验成功" % base_filename)
+            else:
+                progress = self.show_progress(file_total_size)
+                progress.__next__()
+
+                while received_size < file_total_size:
+                    data = self.sock.recv(1024)
+                    received_size += len(data)
+                    try:
+                        progress.send(len(data))
+                    except StopIteration as e:
+                        print("100%")
+                    file_obj.write(data)
+                else:
+                    print("------->file recv down-----")
+                    file_obj.close()
+
+
+if __name__ == "__main__":
+    ftp = FtpClient()
+    ftp.interactive()
