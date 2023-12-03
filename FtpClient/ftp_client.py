@@ -45,19 +45,19 @@ class FtpClient(object):
             retry_count = 0
             while retry_count < 3:
                 username = input("username:").strip()
-                password = input("password").strip()
+                password = input("password:").strip()
                 if self.get_auth_result(username, password):
                     return True
                 else:
                     retry_count += 1
 
     def get_auth_result(self, username, password):
-        date = {
+        data = {
             "action": "auth",
             "username": username,
             "password": password
         }
-        self.sock.send(json.dumps(date).encode())
+        self.sock.send(json.dumps(data).encode())
         response = self.get_response()
 
         if response.get('status_code') == 254:
