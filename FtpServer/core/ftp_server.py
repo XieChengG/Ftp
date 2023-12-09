@@ -9,7 +9,10 @@ from FtpServer.conf import settings
 STATUS_CODE = {
     200: 'Task finished',
     250: 'Invalid cmd format',
-    251: 'Invalid cmd'
+    251: 'Invalid cmd',
+    252: 'Invalid auth data',
+    253: 'Wrong username or password',
+    254: 'Passed authentication'
 }
 
 
@@ -66,3 +69,42 @@ class FtpHandler(socketserver.BaseRequestHandler):
                 print("pass auth..", username)
                 config[username]['Username'] = username
                 return config[username]
+
+    def _put(self, *args, **kwargs):
+        pass
+
+    def _listdir(self, *args, **kwargs):
+        res = self.run_cmd("ls -lsh %s" % self.current_dir)
+        self.send_response(200, data=res)
+
+    def run_cmd(self, cmd):
+        cmd_res = subprocess.getstatusoutput(cmd)
+        return cmd_res
+
+    def _change_dir(self, *args, **kwargs):
+        if args[0]:
+            dest_path = "%s/%s" % (self.current_dir, args[0]['path'])
+        else:
+            dest_path = self.home_dir
+        real_path = os.path.realpath(dest_path)
+        if real_path.startswith(self.home_dir):
+            if os.path.isdir(real_path):
+                self.current_dir = real_path
+                current_relative_dir = self.get_relative_path(self.current_dir)
+                self.send_response(260, {'current_path': current_relative_dir})
+            else:
+                self.send_response(259)
+        else:
+            print("denied to access path", real_path)
+            current_relative_dir = self.get_relative_path(self.current_dir)
+            self.send_response(260, {'current_path': current_relative_dir})
+
+    def get_relative_path(self, abs_path):
+        relative_path = re.sub("^%s" % settings.BASE_DIR, "", abs_path)
+        return relative_path
+
+    def _pwd(self,*args,**kwargs):
+        current_relative_dir = self.get_relative_path(self.current_dir)
+        self.send_response(200,data=current_relative_dir)
+
+
