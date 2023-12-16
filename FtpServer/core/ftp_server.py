@@ -12,7 +12,10 @@ STATUS_CODE = {
     251: 'Invalid cmd',
     252: 'Invalid auth data',
     253: 'Wrong username or password',
-    254: 'Passed authentication'
+    254: 'Passed authentication',
+    256: "File doesn't exist on server",
+    257: "ready to send file",
+    258: "md5 verification"
 }
 
 
@@ -103,8 +106,42 @@ class FtpHandler(socketserver.BaseRequestHandler):
         relative_path = re.sub("^%s" % settings.BASE_DIR, "", abs_path)
         return relative_path
 
-    def _pwd(self,*args,**kwargs):
+    def _pwd(self, *args, **kwargs):
         current_relative_dir = self.get_relative_path(self.current_dir)
-        self.send_response(200,data=current_relative_dir)
+        self.send_response(200, data=current_relative_dir)
+
+    def _get(self, *args, **kwargs):
+        data = args[0]
+        if data.get('filename') is None:
+            self.send_response(255)
+        file_abs_path = "%s/%s" % (self.current_dir, data.get('filename'))
+        print("file abs path", file_abs_path)
+
+        if os.path.isfile(file_abs_path):
+            file_obj = open(file_abs_path, 'rb')
+            file_size = os.path.getsize(file_abs_path)
+            self.send_response(257, data={'file_size': file_size})
+            self.request.recv(1)
+
+            if data.get('md5'):
+                md5_obj = hashlib.md5()
+                for line in file_obj:
+                    self.request.send(line)
+                    md5_obj.update(line)
+                else:
+                    file_obj.close()
+                    md5_val = md5_obj.hexdigest()
+                    self.send_response(258, data={'md5': md5_val})
+                    print("send file done...")
+            else:
+                for line in file_obj:
+                    self.request.send(line)
+                else:
+                    file_obj.close()
+                    print("send file done...")
+        else:
+            self.send_response(256)
 
 
+if __name__ == "__main__":
+    HOST, PORT = "localhost", 9999
